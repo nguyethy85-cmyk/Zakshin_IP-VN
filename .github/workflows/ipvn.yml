@@ -1,0 +1,73 @@
+name: IP-VN Firewall
+
+on:
+  workflow_dispatch:
+
+jobs:
+  ipvn:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install packages
+        run: |
+          sudo apt update
+          sudo apt install -y ipset iptables curl
+
+      - name: Download Vietnam IP lists
+        run: |
+          curl -L \
+            https://raw.githubusercontent.com/ZakShinn/Zakshin_IP-VN/main/ipv4.txt \
+            -o ipv4.txt
+
+          curl -L \
+            https://raw.githubusercontent.com/ZakShinn/Zakshin_IP-VN/main/ipv6.txt \
+            -o ipv6.txt
+
+      - name: Create IPv4 ipset
+        run: |
+          sudo ipset create vn4 hash:net -exist
+
+          while read subnet; do
+            [ -z "$subnet" ] && continue
+            sudo ipset add vn4 "$subnet" -exist
+          done < ipv4.txt
+
+      - name: Create IPv6 ipset
+        run: |
+          sudo ipset create vn6 hash:net family inet6 -exist
+
+          while read subnet; do
+            [ -z "$subnet" ] && continue
+            sudo ipset add vn6 "$subnet" -exist
+          done < ipv6.txt
+
+      - name: Configure IPv4 firewall
+        run: |
+          sudo iptables -I INPUT -p tcp --dport 53 \
+            -m set --match-set vn4 src -j ACCEPT
+
+          sudo iptables -A INPUT -p tcp --dport 53 -j DROP
+
+          sudo iptables -I INPUT -p udp --dport 53 \
+            -m set --match-set vn4 src -j ACCEPT
+
+          sudo iptables -A INPUT -p udp --dport 53 -j DROP
+
+      - name: Configure IPv6 firewall
+        run: |
+          sudo ip6tables -I INPUT -p tcp --dport 53 \
+            -m set --match-set vn6 src -j ACCEPT
+
+          sudo ip6tables -A INPUT -p tcp --dport 53 -j DROP
+
+          sudo ip6tables -I INPUT -p udp --dport 53 \
+            -m set --match-set vn6 src -j ACCEPT
+
+          sudo ip6tables -A INPUT -p udp --dport 53 -j DROP
+
+      - name: Show rules
+        run: |
+          sudo ipset list vn4
+          sudo ipset list vn6
+          sudo iptables -L -n -v
+          sudo ip6tables -L -n -v
